@@ -1129,6 +1129,14 @@ body {
       <div class="app-name">Privacy</div>
       <div class="app-desc">Sessions · visibility · controls</div>
     </div>
+    <div class="app-card" onclick="openSC6()">
+      <div class="app-badge badge-sc" style="background:rgba(179,0,15,.18);color:#ff4455;border:1px solid rgba(179,0,15,.4)">SC6</div>
+      <div class="app-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#b3000f" stroke-width="2" stroke-linecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <div class="app-name">SC6 Panel</div>
+      <div class="app-desc">Dev panel · tracker · operator</div>
+    </div>
   </div>
   <div class="section-label fadeup fadeup-3">Quick Actions</div>
   <div class="app-grid fadeup fadeup-4">
@@ -1618,6 +1626,22 @@ body {
           <span class="timer-chip" data-s="86400">1d</span>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- SC6 SCREEN -->
+<div class="screen generic-screen" id="sc6Screen">
+  <div class="generic-head">
+    <button class="msg-back" onclick="openScreen('hubScreen')">← Back</button>
+    <h2>SC6 Panel</h2>
+    <a href="https://contraband999.github.io/sc6/" target="_blank" style="font-size:.72rem;color:var(--dim);text-decoration:none;margin-left:auto;padding-right:4px">Open ↗</a>
+  </div>
+  <div style="flex:1;position:relative;overflow:hidden">
+    <iframe id="sc6Frame" src="" style="width:100%;height:100%;border:none;background:#000;display:block" allow="clipboard-write"></iframe>
+    <div id="sc6LoadMsg" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);pointer-events:none">
+      <div style="font-size:2rem">⬡</div>
+      <div style="font-size:.8rem;color:var(--dim)">Loading SC6…</div>
     </div>
   </div>
 </div>
@@ -3302,6 +3326,32 @@ function toggleNotifDrawer(){
 window.toggleNotifDrawer=toggleNotifDrawer;
 
 /* ── PRIVACY DASHBOARD ── */
+/* ── SC6 LAUNCHER ── */
+var _sc6Loaded=false;
+function openSC6(){
+  openScreen('sc6Screen');
+  var frame=document.getElementById('sc6Frame');
+  var msg=document.getElementById('sc6LoadMsg');
+  if(!_sc6Loaded){
+    _sc6Loaded=true;
+    frame.onload=function(){if(msg)msg.style.display='none';};
+    frame.src='https://contraband999.github.io/sc6/';
+  }
+}
+window.openSC6=openSC6;
+// Keep SC6 frame loaded when switching back
+document.addEventListener('screenopen',function(e){
+  if(e.detail==='sc6Screen'&&!_sc6Loaded){
+    _sc6Loaded=true;
+    var frame=document.getElementById('sc6Frame');
+    var msg=document.getElementById('sc6LoadMsg');
+    if(frame&&!frame.src){
+      frame.onload=function(){if(msg)msg.style.display='none';};
+      frame.src='https://contraband999.github.io/sc6/';
+    }
+  }
+});
+
 function openPrivacyDash(){
   document.getElementById('privacyModal').classList.add('show');
   renderPrivacy();
