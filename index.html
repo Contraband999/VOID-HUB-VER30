@@ -1423,6 +1423,7 @@ body {
       <span style="font:700 1rem var(--ff-mono);letter-spacing:.1em;color:var(--red-bright)">ADMIN PANEL</span>
     </div>
     <span style="font-size:.7rem;color:var(--dim);margin-left:auto;font-family:var(--ff-mono)">ROOT ACCESS</span>
+    <span style="font-size:.62rem;color:var(--red-bright);font-family:var(--ff-mono);background:rgba(179,0,15,.12);border:1px solid rgba(179,0,15,.3);border-radius:5px;padding:2px 7px;margin-left:6px">v3.1</span>
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px">
     <!-- Stats bar -->
@@ -1436,6 +1437,7 @@ body {
       <button class="auth-tab" onclick="adminTab(this,'adminLogsTab')" style="flex:1;min-width:60px;font-size:.72rem">Logs</button>
       <button class="auth-tab" onclick="adminTab(this,'adminDMTab')" style="flex:1;min-width:60px;font-size:.72rem">DM</button>
       <button class="auth-tab" onclick="adminTab(this,'adminOpsTab')" style="flex:1;min-width:60px;font-size:.72rem">Ops</button>
+      <button class="auth-tab" onclick="adminTab(this,'adminDevicesTab');adminLoadDeviceBindings()" style="flex:1;min-width:60px;font-size:.72rem;position:relative" id="adminDevicesTabBtn">Devices<span id="adminDevPendingBadge" style="display:none;position:absolute;top:1px;right:2px;background:var(--gold);color:#000;font-size:.5rem;border-radius:50%;width:10px;height:10px;line-height:10px;text-align:center">!</span></button>
     </div>
     <!-- Users tab -->
     <div id="adminUsersTab">
@@ -1499,6 +1501,18 @@ body {
           <div id="adminDMLog" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
         </div>
       </div>
+    </div>
+    <!-- Device Bindings tab -->
+    <div id="adminDevicesTab" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font:.75rem var(--ff-mono);color:var(--red-bright)">🔒 DEVICE BINDINGS</div>
+        <div style="display:flex;gap:6px">
+          <button onclick="adminLoadDeviceBindings()" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:6px 12px;color:var(--dim);cursor:pointer;font:.78rem var(--ff-head)">↻ Refresh</button>
+          <button onclick="adminWipeAllBindings()" style="background:rgba(179,0,15,.15);border:1px solid rgba(179,0,15,.3);border-radius:7px;padding:6px 12px;color:#ff6b6b;cursor:pointer;font:.78rem var(--ff-head)">🗑 Wipe All</button>
+        </div>
+      </div>
+      <div style="font:.7rem var(--ff-head);color:var(--dim);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.6">Each user's device is registered on first login. Pending = waiting for your approval. Approved = only that device can log in. Reset = removes binding so they can re-register from a new device.</div>
+      <div id="adminDeviceList" style="display:flex;flex-direction:column;gap:8px"><div style="font:.78rem var(--ff-mono);color:var(--dim);text-align:center;padding:20px">Loading…</div></div>
     </div>
     <!-- Ops (Operator Controls) tab -->
     <div id="adminOpsTab" style="display:none">
@@ -3023,7 +3037,7 @@ function doLogin(){
       if(banData){setMsg('Account suspended','err');return}
       me={username:u,hash:data.hash,created:data.created||0};
       try{localStorage.setItem('voidUser',JSON.stringify(me))}catch(e){}
-      onLogin();
+      voidCheckDevBinding(u,function(){onLogin();});
     });
   });
 }
@@ -3071,6 +3085,194 @@ function doRegister(){
 }
 
 function fbKey(s){return s.replace(/[^a-zA-Z0-9_-]/g,'_')}
+
+/* ══════════════════════════════════════════════
+   DEVICE BINDING — login device fingerprint gate
+══════════════════════════════════════════════ */
+function voidDevFingerprint(){
+  var n=navigator;
+  var parts=[n.userAgent,n.language,screen.width+'x'+screen.height,screen.colorDepth,
+    (Intl&&Intl.DateTimeFormat?Intl.DateTimeFormat().resolvedOptions().timeZone:'?'),
+    n.hardwareConcurrency||'?',n.platform||'?'];
+  try{
+    var c=document.createElement('canvas');c.width=120;c.height=30;
+    var ctx=c.getContext('2d');
+    ctx.fillStyle='#f00';ctx.fillRect(0,0,30,20);
+    ctx.fillStyle='rgba(0,100,255,.5)';ctx.fillText('voidfp',2,18);
+    parts.push(c.toDataURL().slice(-40));
+  }catch(e){}
+  var str=parts.join('|');var h=5381;
+  for(var i=0;i<str.length;i++){h=((h<<5)+h)+str.charCodeAt(i);h=h&h;}
+  return 'fp_'+(h>>>0).toString(16);
+}
+
+function voidDevBindingPath(u){return 'voidDevBindings/'+fbKey(u);}
+
+function voidCheckDevBinding(u,onPass){
+  var fp=voidDevFingerprint();
+  fbGet(voidDevBindingPath(u)).then(function(binding){
+    // No binding yet — register as pending, block until admin approves
+    if(!binding||!binding.fp){
+      var newB={fp:fp,ua:navigator.userAgent.slice(0,200),lang:navigator.language,
+        tz:(Intl&&Intl.DateTimeFormat?Intl.DateTimeFormat().resolvedOptions().timeZone:'?'),
+        screen:screen.width+'x'+screen.height,
+        boundAt:new Date().toISOString(),status:'pending',locked:false};
+      fbPut(voidDevBindingPath(u),newB).catch(function(){});
+      _voidShowGate('⏳','#f5c800','Waiting for Approval',
+        'Your device has been registered and is waiting for admin approval.<br><br>'+
+        'Once approved you will be able to log in. Please contact the admin.');
+      return;
+    }
+    // Locked — block
+    if(binding.locked){
+      _voidShowGate('🔒','#ff5050','Access Locked',
+        'Your account is temporarily locked due to a security violation.<br>Contact the admin to unlock.');
+      return;
+    }
+    // Pending — still waiting
+    if(binding.status==='pending'){
+      _voidShowGate('⏳','#f5c800','Waiting for Approval',
+        'Your device is still pending admin approval. Please check back later or contact the admin.');
+      return;
+    }
+    // Rejected
+    if(binding.status==='rejected'){
+      _voidShowGate('🚫','#ff5050','Access Denied',
+        'Your device has been rejected by the admin. Contact the admin if you think this is an error.');
+      return;
+    }
+    // Approved — verify fingerprint matches
+    if(binding.status==='approved'||binding.status==='legacy'){
+      if(binding.fp===fp){onPass();return;}
+      // Different device — lock and block
+      fbPut(voidDevBindingPath(u)+'/locked',true).catch(function(){});
+      fbPut(voidDevBindingPath(u)+'/lastViolationFp',fp).catch(function(){});
+      fbPut(voidDevBindingPath(u)+'/lastViolationAt',new Date().toISOString()).catch(function(){});
+      _voidShowGate('🚨','#ff5050','Device Violation',
+        'This account was accessed from an unrecognized device.<br><br>'+
+        'Access has been blocked and the admin has been notified. Contact the admin to unlock.');
+      return;
+    }
+    // Fallback: let through (old entries without status)
+    if(binding.fp===fp){onPass();return;}
+    _voidShowGate('🚨','#ff5050','Device Violation','Unrecognized device. Contact the admin.');
+  }).catch(function(){onPass();});// If Firebase unreachable, let through (graceful degradation)
+}
+
+function _voidShowGate(icon,color,title,body){
+  // Hide auth form, show gate message in its place
+  var form=document.getElementById('authForm')||document.querySelector('.auth-box');
+  var gateId='_voidGate';
+  var existing=document.getElementById(gateId);
+  if(existing)existing.parentNode.removeChild(existing);
+  var div=document.createElement('div');
+  div.id=gateId;
+  div.style.cssText='position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  div.innerHTML='<div style="text-align:center;max-width:320px">'
+    +'<div style="font-size:2.4rem;margin-bottom:14px">'+icon+'</div>'
+    +'<div style="color:'+color+';font:700 .95rem var(--ff-mono);letter-spacing:.05em;margin-bottom:10px">'+title+'</div>'
+    +'<div style="color:var(--dim);font:.8rem var(--ff-head);line-height:1.7;margin-bottom:20px">'+body+'</div>'
+    +'<button onclick="location.reload()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 24px;color:var(--dim);font:.83rem var(--ff-head);cursor:pointer">← Back to Login</button>'
+    +'</div>';
+  document.body.appendChild(div);
+}
+
+/* Admin device binding management */
+window.adminLoadDeviceBindings=function(){
+  var list=document.getElementById('adminDeviceList');
+  if(!list)return;
+  list.innerHTML='<div style="font:.78rem var(--ff-mono);color:var(--dim);text-align:center;padding:20px">Loading…</div>';
+  fbGet('voidDevBindings').catch(function(){return null;}).then(function(data){
+    if(!data||!Object.keys(data).length){
+      list.innerHTML='<div style="font:.78rem var(--ff-mono);color:var(--dim);text-align:center;padding:20px">No device bindings yet. Users register on first login.</div>';
+      document.getElementById('adminDevPendingBadge').style.display='none';
+      return;
+    }
+    var users=Object.keys(data).sort(function(a,b){
+      var sa=data[a].status||'approved',sb=data[b].status||'approved';
+      return (sa==='pending'?0:1)-(sb==='pending'?0:1);
+    });
+    var pendingCount=users.filter(function(u){return data[u].status==='pending';}).length;
+    var badge=document.getElementById('adminDevPendingBadge');
+    if(badge)badge.style.display=pendingCount?'':'none';
+    list.innerHTML=users.map(function(u){
+      var b=data[u];
+      var status=b.status||'approved';
+      var locked=b.locked===true;
+      var statusColor=locked?'#ff5050':status==='pending'?'#f5c800':status==='rejected'?'#ff5050':'#4fc';
+      var statusLabel=locked?'🔒 Locked':status==='pending'?'⏳ Pending':status==='rejected'?'✗ Rejected':'✓ Approved';
+      var boundAt=b.boundAt?new Date(b.boundAt).toLocaleString():'?';
+      return '<div style="background:var(--surface);border:1px solid var(--border)'+(status==='pending'?';border-color:var(--gold)':'')+';border-radius:9px;padding:12px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        +'<span style="font:.82rem var(--ff-mono);color:var(--ink);font-weight:700;flex:1">'+esc(u)+'</span>'
+        +'<span style="font:.65rem var(--ff-mono);color:'+statusColor+';font-weight:700">'+statusLabel+'</span>'
+        +'</div>'
+        +'<div style="font:.65rem var(--ff-head);color:var(--dim);margin-bottom:2px">First seen: '+esc(boundAt)+'</div>'
+        +(b.ua?'<div style="font:.6rem var(--ff-head);color:var(--dim);word-break:break-all;margin-bottom:6px;opacity:.7">'+esc(b.ua.slice(0,120))+'</div>':'')
+        +(b.tz?'<div style="font:.6rem var(--ff-head);color:var(--dim);margin-bottom:6px">🕐 '+esc(b.tz)+(b.screen?' · '+esc(b.screen):'')+(b.lang?' · '+esc(b.lang):'')+'</div>':'')
+        +(b.lastViolationAt?'<div style="font:.6rem var(--ff-head);color:#ff6b6b;margin-bottom:6px">⚠ Last violation: '+esc(new Date(b.lastViolationAt).toLocaleString())+'</div>':'')
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        +(status==='pending'
+          ?'<button onclick="adminApproveDevice(\''+esc(u)+'\')" style="background:rgba(79,255,160,.18);border:1px solid #4fc;border-radius:6px;padding:5px 12px;color:#4fc;font:.72rem var(--ff-head);cursor:pointer">✓ Approve</button>'
+           +'<button onclick="adminRejectDevice(\''+esc(u)+'\')" style="background:rgba(179,0,15,.18);border:1px solid var(--border-hot);border-radius:6px;padding:5px 12px;color:#ff6b6b;font:.72rem var(--ff-head);cursor:pointer">✗ Reject</button>'
+          :'')
+        +(locked?'<button onclick="adminUnlockDevice(\''+esc(u)+'\')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--dim);font:.72rem var(--ff-head);cursor:pointer">🔓 Unlock</button>':'')
+        +(status==='approved'?'<button onclick="adminResetDevice(\''+esc(u)+'\')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--dim);font:.72rem var(--ff-head);cursor:pointer">↺ Reset Binding</button>':'')
+        +'<button onclick="adminDeleteDevice(\''+esc(u)+'\')" style="background:rgba(179,0,15,.12);border:1px solid rgba(179,0,15,.25);border-radius:6px;padding:5px 12px;color:#ff6b6b;font:.72rem var(--ff-head);cursor:pointer">🗑 Remove</button>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+  }).catch(function(){
+    list.innerHTML='<div style="font:.78rem var(--ff-mono);color:#ff6b6b;text-align:center;padding:20px">Failed to load. Check Firebase connection.</div>';
+  });
+};
+window.adminApproveDevice=function(u){
+  fbPut('voidDevBindings/'+fbKey(u)+'/status','approved')
+    .then(function(){fbPut('voidDevBindings/'+fbKey(u)+'/locked',false).catch(function(){});adminLoadDeviceBindings();})
+    .catch(function(){alert('Failed to approve');});
+};
+window.adminRejectDevice=function(u){
+  fbPut('voidDevBindings/'+fbKey(u)+'/status','rejected')
+    .then(function(){fbPut('voidDevBindings/'+fbKey(u)+'/locked',true).catch(function(){});adminLoadDeviceBindings();})
+    .catch(function(){alert('Failed to reject');});
+};
+window.adminUnlockDevice=function(u){
+  var path='voidDevBindings/'+fbKey(u);
+  fbGet(path).then(function(b){
+    var updated=Object.assign({},b||{},{locked:false,lastViolationAt:null,lastViolationFp:null});
+    return fbPut(path,updated);
+  }).then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed to unlock');});
+};
+window.adminResetDevice=function(u){
+  if(!voidConfirm){
+    if(!confirm('Reset binding for '+u+'? They will need to re-register their device.'))return;
+    fbDelete('voidDevBindings/'+fbKey(u)).then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+    return;
+  }
+  voidConfirm('Reset device binding for '+u+'? They will need to re-register from scratch.',function(){
+    fbDelete('voidDevBindings/'+fbKey(u)).then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+  },'↺');
+};
+window.adminDeleteDevice=function(u){
+  if(!voidConfirm){
+    if(!confirm('Remove binding for '+u+'?'))return;
+    fbDelete('voidDevBindings/'+fbKey(u)).then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+    return;
+  }
+  voidConfirm('Remove device binding for '+u+'?',function(){
+    fbDelete('voidDevBindings/'+fbKey(u)).then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+  },'🗑');
+};
+window.adminWipeAllBindings=function(){
+  if(!voidConfirm){
+    if(!confirm('Wipe ALL device bindings? All users will need to re-register.'))return;
+    fbDelete('voidDevBindings').then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+    return;
+  }
+  voidConfirm('Wipe ALL device bindings? Every user will re-register on next login.',function(){
+    fbDelete('voidDevBindings').then(function(){adminLoadDeviceBindings();}).catch(function(){alert('Failed');});
+  },'⚠');
+};
 
 function onLogin(){
   document.getElementById('hubAvatar').textContent=me.username[0].toUpperCase();
