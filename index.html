@@ -48,6 +48,8 @@ body {
   position: fixed; inset: 0;
   display: flex; flex-direction: column;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   z-index: 1;
   opacity: 0; pointer-events: none;
   transition: opacity .35s ease;
@@ -1425,7 +1427,7 @@ body {
       <span style="font:700 1rem var(--ff-mono);letter-spacing:.1em;color:var(--red-bright)">ADMIN PANEL</span>
     </div>
     <span style="font-size:.7rem;color:var(--dim);margin-left:auto;font-family:var(--ff-mono)">ROOT ACCESS</span>
-    <span style="font-size:.62rem;color:var(--red-bright);font-family:var(--ff-mono);background:rgba(179,0,15,.12);border:1px solid rgba(179,0,15,.3);border-radius:5px;padding:2px 7px;margin-left:6px">v3.2</span>
+    <span style="font-size:.62rem;color:var(--red-bright);font-family:var(--ff-mono);background:rgba(179,0,15,.12);border:1px solid rgba(179,0,15,.3);border-radius:5px;padding:2px 7px;margin-left:6px">v3.3</span>
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:16px">
     <!-- Stats bar -->
@@ -4552,7 +4554,7 @@ function patchOnLoginForAdmin(){
    STATUS TICKER + MARQUEE INIT
 ══════════════════════════════════════════════ */
 var tickerMessages=[
-  '⬡ VOID HUB v3.2 — Zero-log encrypted platform',
+  '⬡ VOID HUB v3.3 — Zero-log encrypted platform',
   '◈ Ghost Mode: your activity is invisible to all',
   '🔥 Burn Notes: messages that self-destruct on read',
   '🔐 PIN Lock: auto-locks after inactivity',
@@ -6132,7 +6134,7 @@ function termExec(cmd){
     hash:function(){if(!args.length){termPrint('Usage: hash <text>','var(--gold)');return;}termPrint(hashStr(args.join(' ')));},
     base64:function(){try{termPrint(btoa(args.join(' ')));}catch(e){termPrint('Error: '+e.message,'var(--red-bright)');}},
     decode:function(){try{termPrint(atob(args[0]||''));}catch(e){termPrint('Error: invalid base64','var(--red-bright)');}},
-    version:function(){termPrint('VOID HUB v3.2 — encrypted private messaging');},
+    version:function(){termPrint('VOID HUB v3.3 — encrypted private messaging');},
     logout:function(){doLogout();termPrint('Logged out.');},
     status:function(){if(!me||!args.length){termPrint('Usage: status <message>','var(--gold)');return;}fbPatch('users/'+fbKey(me.username),{status:args.join(' ')}).then(function(){termPrint('Status updated.');});},
   };
